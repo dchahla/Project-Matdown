@@ -3,7 +3,7 @@
 
 ##  What is Matdown?
 
-**Matdown** is a compact, dependency-free equation parser that turns lightweight math expressions into styled, semantic HTML — no LaTeX, no external libraries, no regrets.
+**Matdown** is a compact, dependency-free equation editor that turns lightweight math expressions into styled, semantic HTML — no LaTeX, no external libraries, no regrets.
 
 It’s inspired by the realization that game engines, like cloud services, are just real-time systems — and HTML/CSS are expressive primitives that deserve more credit.
 
@@ -12,55 +12,16 @@ It’s inspired by the realization that game engines, like cloud services, are j
 ##  Why ?
 
 - ✅ No parser generators
-- ✅ No ASTs
+- ✅ Minimal AST
 - ✅ No LaTeX
 - ✅ No DOM hell
 - ✅ No stylesheets from the Math Wizard Society™ ruining your vibe
 
 Instead:
-- ✨ Uses recursive string parsing
+- ✨ Inline keyboard editing
+- ✨ Don't worry about parenthesis (math aware input)
 - ✨ Renders DOM directly (fractions, exponents, etc.)
 - ✨ Leverages the box model & inline layout
-- ✨ Comes with a modular, non-intrusive context menu UI
-
----
-
-## 🧪 Example Input
-
-```
-(1+x)^2 / (2x - 3)
-```
-
-## ⬇️ Becomes
-
-```html
-<div class="fraction">
-  <span class="numerator">(1+x)<sup>2</sup></span>
-  <span class="denominator">(2x - 3)</span>
-</div>
-```
-
----
-
-## 🛠 How It Works
-
-### 1. **Recursive Descent Parsing**
-- Function: `buildNode(exp)`
-- Splits expression by outermost operator
-- Recursively wraps sub-parts into semantic HTML containers
-
-### 2. **Parentheses Matching**
-- Function: `matchingParens(str)`
-- Uses a counter-based matcher to balance `()` pairs safely
-
-### 3. **Operator Precedence**
-- Left-to-right scan
-- Evaluates only outermost operators unless overridden by parentheses
-- Fast and linear for common math expressions
-
-### 4. **Symbol Search Filtering**
-- Smart input filtering using `.filter()` on a static symbol list
-- Zero-cost search experience for inline math menus
 
 ---
 
@@ -69,8 +30,6 @@ Instead:
 > They're bloated, margin-fighting, box-model-reinventing beasts.
 
 You don’t need a compiler to render a fraction. You need a `<div>`. Matdown leans into browser-native layouts — because **HTML is the universal rendering target** anyway.
-
----
 
 ---
 
@@ -84,9 +43,8 @@ HTML and CSS aren’t just for design — they’re universal, transferable skil
 
 ## 🧩 Roadmap
 
-- [ ] Inline editing
-- [ ] Touch-friendly symbol picker
-- [ ] Expand support for integrals/summations
+- [ ] Keyboard groups for easier and faster typing
+- [ ] Expand support for integrals/summations/roots/matrices/vectors/unary postfix operators
 - [ ] Export to SVG or Canvas
 
 ---

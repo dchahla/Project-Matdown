@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <title>Interactive Math Algorithm Composer</title>
   <style>
+    #renderArea {
+        font-family: 'Times New Roman', serif;
+    }
     .matdowncontainer {
         padding: 10px;
         margin: 20px;
@@ -42,6 +45,20 @@
         border: 1px dashed #ccc;
         border-radius: 4px;
         margin: 2px;
+    }
+    .matdownselected {
+        background-color: aqua;
+    }
+    #matdownkeyboard {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    #matdownkeyboard > div {
+        border: 1px solid black;
+        padding: 10px;
     }
     /* Exponent style */
     .matdowncontainer .matdownexponent {
@@ -95,201 +112,195 @@
     .symbolItem:hover {
       background: #eee;
     }
+    .invalid {
+      border: 2px solid red;
+      background-color: #fdd;
+    }
   </style>
 </head>
 <body>
 
 <div class="matdowncontainer">
-  <h3>Input </h3>
-    -Right-click to insert symbols. (only works when page is parent) <br>
-    -Override with your own HTML; i.e. add  <a>&#8826;br&#8827;</a>  to force a new line.
-  <input type="text" id="algorithmInput" placeholder="Example: (3^2+1)/(19-10)">
-  <button onclick="renderAlgorithm()">Render Algorithm</button>
-
-  <h3>Output:</h3>
+  <h3>Formula:</h3>
   <div id="renderArea"></div>
+  <input type="text" id="algorithmInput" placeholder="Example: (3^2+1)/(19−10)">
+  <div id="matdownkeyboard">
+    <div id="delete">⌫</div>
+    <div id="left">←</div>
+    <div id="right">→</div>
+    <div id="up">↑</div>
+    <div id="seperator">.</div>
+  </div>
 
   <h3>Embeddable HTML Output:</h3>
   <textarea id="htmlOutput" readonly></textarea>
 </div>
 
-<!-- Custom context menu (it will also be scoped by our container if moved inside) -->
-<div id="matdownContextMenu">
-  <input type="text" id="searchSymbols" placeholder="Search symbols...">
-  <div id="symbolList"></div>
-</div>
+<script type="module">
+import {MathDigitNode, MathSymbolNode, MathUnaryOperationNode, MathOperationNode, MathPlaceholderNode, MathExponentNode, MathFractionNode, MathFunctionNode} from './ast/index.mjs';
+import MathKeyboard from './keyboard/index.mjs';
+import MathHtmlEmmiter from './output/htmlEmmiter.mjs';
+import MathParser from './syntax/parser.mjs';
+import MathUnparser from './syntax/unparser.mjs';
+import symbols from './syntax/symbols.mjs';
 
-<script>
-/**
- * Helper that removes one truly outer pair of parentheses
- * if they wrap the entire expression.
- */
-function removeOuterParens(str) {
-  if (str.length < 2) return str;
-  if (str[0] !== '(' || str[str.length - 1] !== ')') {
-    return str;
+const keyboard = new MathKeyboard();
+const emmiter = new MathHtmlEmmiter(keyboard);
+const unparser = new MathUnparser();
+
+function display(updateInput=true) {
+  if (updateInput) {
+    const outputMath = unparser.visit(keyboard.root);
+    document.getElementById('algorithmInput').value = outputMath;
   }
-  let depth = 0;
-  for (let i = 0; i < str.length; i++) {
-    if (str[i] === '(') depth++;
-    if (str[i] === ')') depth--;
-    // If we reach depth 0 before the last character,
-    // the outer parentheses do not enclose the entire string.
-    if (depth === 0 && i < str.length - 1) {
-      return str;
-    }
-  }
-  // If we didn't drop to 0 depth until the very end,
-  // these parentheses wrap the entire string.
-  return str.slice(1, -1);
+
+  const outputHTML = emmiter.visit(keyboard.root);
+  document.getElementById('renderArea').innerHTML = '';
+  document.getElementById('renderArea').appendChild(outputHTML);
+  document.getElementById('htmlOutput').value = '<div class="algorithm">\n' + outputHTML.innerHTML + '\n</div>';
 }
 
-/**
- * Recursively build the HTML structure for a math expression.
- */
-// 1) Insert this helper (instead of removeOuterParens)
-function matchingParens(str) {
-  let depth = 0;
-  for (let i = 0; i < str.length; i++) {
-    if (str[i] === '(') depth++;
-    if (str[i] === ')') depth--;
-    if (depth < 0) return false; // More closing ) than opening (
-  }
-  return depth === 0; // Must end at depth 0
-}
+document.getElementById('algorithmInput').addEventListener('input', (event) => {
+  const input = event.target.value;
 
-// 2) Replace your buildNode with this version
-function buildNode(exp) {
-  // remove whitespace
-  exp = exp.replace(/\s+/g, '');
-
-  let depth = 0;
-  for (let i = 0; i < exp.length; i++) {
-    const char = exp[i];
-    if (char === '(') {
-      depth++;
-    } else if (char === ')') {
-      depth--;
-    } else if (depth === 0 && ['+','-','*','/','%','^'].includes(char)) {
-      // We found a top-level operator
-      const left = exp.slice(0, i);
-      const right = exp.slice(i + 1);
-
-      switch (char) {
-        case '/':
-          return `
-            <div class="matdownfraction">
-              <div class="matdownnumerator">${buildNode(left)}</div>
-              <div class="matdowndenominator">${buildNode(right)}</div>
-            </div>
-          `;
-        case '^':
-          return `
-            <span class="matdowninline-expression">
-              ${buildNode(left)}
-              <span class="matdownexponent">${buildNode(right)}</span>
-            </span>
-          `;
-        default:
-          return `
-            <span class="matdowninline-expression">
-              ${buildNode(left)}
-              <span class="matdownoperator">${char}</span>
-              ${buildNode(right)}
-            </span>
-          `;
-      }
-    }
-  }
-
-  if (
-    exp[0] === '(' &&
-    exp[exp.length - 1] === ')' &&
-    matchingParens(exp)
-  ) {
-    return `<span class="matdowngroup">${buildNode(exp.slice(1, -1))}</span>`;
-  }
-
-  if (!isNaN(exp)) {
-    return `<span>${exp}</span>`;
-  }
-
-  return `<span>${exp}</span>`;
-}
-
-/**
- * Public function to parse the input string and produce HTML
- */
-function parseAndRender(expr) {
-  return buildNode(expr);
-}
-
-/**
- * Reads the input, parses & renders, and updates the DOM
- */
-function renderAlgorithm() {
-  const input = document.getElementById('algorithmInput').value;
-  const outputHTML = parseAndRender(input);
-  document.getElementById('renderArea').innerHTML = outputHTML;
-  document.getElementById('htmlOutput').value =
-    '<div class="algorithm">\n' + outputHTML + '\n</div>';
-}
-
-// ========================================
-// Right-click symbol insertion logic
-// ========================================
-const mathSymbols = [{ symbol: '±', name: 'plus minus' }, { symbol: '−', name: 'minus sign' }, { symbol: '×', name: 'times sign' }, { symbol: '÷', name: 'division sign' }, { symbol: '∞', name: 'infinity' }, { symbol: '≠', name: 'not equal' }, { symbol: '≈', name: 'approximately equal' }, { symbol: '≡', name: 'equivalent to' }, { symbol: '≅', name: 'congruent to' }, { symbol: '∴', name: 'therefore' }, { symbol: '∵', name: 'because' }, { symbol: '∑', name: 'summation' }, { symbol: '∏', name: 'product' }, { symbol: '∫', name: 'integral' }, { symbol: '∂', name: 'partial derivative' }, { symbol: '√', name: 'square root' }, { symbol: '³', name: 'cube exponent' }, { symbol: '²', name: 'square exponent' }, { symbol: '°', name: 'degree' }, { symbol: '∀', name: 'for all' }, { symbol: '∃', name: 'there exists' }, { symbol: '∈', name: 'element of' }, { symbol: '⇒', name: 'implies' }, { symbol: '⇔', name: 'if and only if' }, { symbol: '→', name: 'right arrow' }, { symbol: '←', name: 'left arrow' }, { symbol: '↑', name: 'up arrow' }, { symbol: '↓', name: 'down arrow' }, { symbol: '⊂', name: 'subset of' }, { symbol: '⊆', name: 'subset or equal' }, { symbol: '⊄', name: 'not a subset of' }, { symbol: '∅', name: 'empty set' }, { symbol: '∧', name: 'logical and' }, { symbol: '∨', name: 'logical or' }, { symbol: '¬', name: 'logical not' }, { symbol: '⊕', name: 'circled plus' }, { symbol: '⊗', name: 'circled times' }, { symbol: '≤', name: 'less than or equal' }, { symbol: '≥', name: 'greater than or equal' }, { symbol: 'Σ', name: 'capital sigma' }, { symbol: 'Π', name: 'capital pi' }, { symbol: 'Γ', name: 'capital gamma' }, { symbol: 'Λ', name: 'capital lambda' }, { symbol: 'Δ', name: 'capital delta' }, { symbol: 'α', name: 'alpha' }, { symbol: 'β', name: 'beta' }, { symbol: 'γ', name: 'gamma' }, { symbol: 'δ', name: 'delta' }, { symbol: 'θ', name: 'theta' }, { symbol: 'λ', name: 'lambda' }, { symbol: 'μ', name: 'mu' }, { symbol: 'π', name: 'pi' }, { symbol: 'φ', name: 'phi' }, { symbol: 'ω', name: 'omega' }];
-const matdowninputEl = document.getElementById('algorithmInput');
-const matdownContextMenuEl = document.getElementById('matdownContextMenu');
-const searchEl = document.getElementById('searchSymbols');
-const symbolListEl = document.getElementById('symbolList');
-let lastCaretPosition = 0;
-
-matdowninputEl.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  lastCaretPosition = matdowninputEl.selectionStart;
-  matdownContextMenuEl.style.left = e.pageX + 'px';
-  matdownContextMenuEl.style.top = e.pageY + 'px';
-  searchEl.value = '';
-  renderSymbols(mathSymbols);
-  matdownContextMenuEl.style.display = 'block';
-  searchEl.focus();
-});
-
-document.addEventListener('click', (e) => {
-  if (!matdownContextMenuEl.contains(e.target) && e.target !== matdowninputEl) {
-    matdownContextMenuEl.style.display = 'none';
+  try {
+    const parser = new MathParser(input);
+    keyboard.root = parser.parse();
+    keyboard.current = keyboard.root;
+    display(false);
+    document.getElementById('algorithmInput').classList.remove('invalid');
+  } catch (error) {
+    document.getElementById('algorithmInput').classList.add('invalid');
   }
 });
 
-searchEl.addEventListener('input', () => {
-  const query = searchEl.value.toLowerCase();
-  const filtered = mathSymbols.filter(item =>
-    item.symbol.includes(query) || item.name.includes(query)
-  );
-  renderSymbols(filtered);
-});
+function inputIfNotEditing(action) {
+  return (...args) => {
+    if (document.getElementById('algorithmInput') === document.activeElement) return;
+    action(...args);
+  }
+}
 
-function renderSymbols(symbols) {
-  symbolListEl.innerHTML = '';
-  symbols.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'symbolItem';
-    div.textContent = `${item.symbol} (${item.name})`;
-    div.onclick = () => insertSymbol(item.symbol);
-    symbolListEl.appendChild(div);
+function registerNodeKey(key, create, insert=keyboard.insert) {
+  const element = document.getElementById('matdownkeyboard');
+
+  const placeholder = new MathPlaceholderNode();
+  placeholder.node = create();
+  placeholder.node.parentPlaceholder = placeholder.node;
+  const contents = emmiter.visit(placeholder);
+  
+  const div = document.createElement('div');
+  div.appendChild(contents);
+  element.appendChild(div);
+  
+  const handleInsert = inputIfNotEditing(() => {
+    insert.bind(keyboard)(create());
+    display();
   });
+
+  div.onclick = handleInsert;
+
+  if (key) {
+    document.addEventListener("keyup", (event) => {
+      if (event.key === key) {
+        handleInsert();
+        event.stopPropagation();
+      }
+    });
+  }
 }
 
-function insertSymbol(symbol) {
-  const v = matdowninputEl.value;
-  matdowninputEl.value = v.slice(0, lastCaretPosition) + symbol + v.slice(lastCaretPosition);
-  matdowninputEl.focus();
-  matdowninputEl.setSelectionRange(lastCaretPosition + symbol.length, lastCaretPosition + symbol.length);
-  matdownContextMenuEl.style.display = 'none';
+for (let digit = 0; digit < 10; digit++) {
+  registerNodeKey(digit.toString(), () => new MathDigitNode(digit), keyboard.insertDigit);
 }
 
-renderSymbols(mathSymbols);
+for (let letter of ['a', 'b', 'c', 'x', 'y', 'z']) {
+  registerNodeKey(letter, () => new MathSymbolNode(letter), keyboard.insertSymbol);
+}
+
+registerNodeKey(symbols.equals, () => new MathOperationNode(symbols.equals));
+registerNodeKey(symbols.notEquals, () => new MathOperationNode(symbols.notEquals));
+registerNodeKey(symbols.less, () => new MathOperationNode(symbols.less));
+registerNodeKey(symbols.greater, () => new MathOperationNode(symbols.greater));
+registerNodeKey(symbols.lessEquals, () => new MathOperationNode(symbols.lessEquals));
+registerNodeKey(symbols.greaterEquals, () => new MathOperationNode(symbols.greaterEquals));
+registerNodeKey(symbols.plus, () => new MathOperationNode(symbols.plus));
+registerNodeKey(symbols.minus, () => new MathOperationNode(symbols.minus));
+registerNodeKey(null, () => new MathOperationNode(symbols.plusMinus));
+registerNodeKey(null, () => new MathUnaryOperationNode(symbols.plus));
+registerNodeKey(null, () => new MathUnaryOperationNode(symbols.minus));
+registerNodeKey(null, () => new MathUnaryOperationNode(symbols.plusMinus));
+registerNodeKey(symbols.times, () => new MathOperationNode(symbols.times));
+registerNodeKey(symbols.division, () => new MathOperationNode(symbols.division));
+registerNodeKey(symbols.fraction, () => new MathFractionNode());
+registerNodeKey(symbols.exponent, () => new MathExponentNode());
+
+registerNodeKey(null, () => new MathSymbolNode(symbols.infinity), keyboard.insertSymbol);
+registerNodeKey(symbols.approximatelyEqual, () => new MathOperationNode(symbols.approximatelyEqual));
+registerNodeKey(symbols.equivalentTo, () => new MathOperationNode(symbols.equivalentTo));
+registerNodeKey(symbols.congruentTo, () => new MathOperationNode(symbols.congruentTo));
+registerNodeKey(null, () => new MathSymbolNode(symbols.capitalSigma), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.capitalPi), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.capitalGamma), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.capitalLambda), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.capitalDelta), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.alpha), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.beta), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.gamma), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.delta), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.theta), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.lambda), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.mu), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.pi), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.phi), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathSymbolNode(symbols.omega), keyboard.insertSymbol);
+registerNodeKey(null, () => new MathFunctionNode('sin', 1));
+registerNodeKey(null, () => new MathFunctionNode('cos', 1));
+registerNodeKey(null, () => new MathFunctionNode('tan', 1));
+registerNodeKey(null, () => new MathFunctionNode('arcsin', 1));
+registerNodeKey(null, () => new MathFunctionNode('arccos', 1));
+registerNodeKey(null, () => new MathFunctionNode('arctan', 1));
+
+document.getElementById('delete').onclick = inputIfNotEditing(() => {keyboard.delete(); display();});
+document.getElementById('left').onclick = inputIfNotEditing(() => {keyboard.moveLeft(); display();});
+document.getElementById('right').onclick = inputIfNotEditing(() => {keyboard.moveRight(); display();});
+document.getElementById('up').onclick = inputIfNotEditing(() => {keyboard.moveUp(); display();});
+document.getElementById('seperator').onclick = inputIfNotEditing(() => {keyboard.insertDecimalSeperator(); display();});
+document.addEventListener("keyup", inputIfNotEditing((event) => {
+  let handled = true;
+
+  switch (event.key) {
+    case "Backspace":
+    case "Delete":
+      keyboard.delete();
+      break;
+    case "ArrowLeft":
+      keyboard.moveLeft();
+      break;
+    case "ArrowRight":
+      keyboard.moveRight();
+      break;
+    case "ArrowUp":
+      keyboard.moveUp();
+      break;
+    case ".":
+    case ",":
+      keyboard.insertDecimalSeperator();
+      break;
+    default:
+      handled = false;
+      break;
+  }
+
+  if (handled) {
+    event.stopPropagation();
+    event.preventDefault();
+    display();
+  }
+}));
+
+emmiter.onClick = display;
+display();
 </script>
 
 </body>
